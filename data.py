@@ -23,7 +23,7 @@ def get_equity(returns, amount=10000):
 
 def get_annual_return(equity):
     years = len(equity) / 252
-    return (equity.iloc[-1] / equity.iloc[0] ** (1 / years) - 1)
+    return (equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1
 
 def get_volatility(returns):
     return returns.std() * 252 ** 0.5

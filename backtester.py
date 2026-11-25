@@ -23,19 +23,28 @@ def get_fair_start(prices, long=200):
     return start_date
 
 
+# The position held each day from the fair start date (1 = invested, 0 = in cash).
+# shift(1) means today's position comes from yesterday's signal.
+def get_positions(prices, short=50, long=200):
+    signal = ma_crossover_signal(prices, short, long)
+    start_date = get_fair_start(prices, long)
+    position = signal.shift(1).fillna(0)[start_date:]
+    return position
+
+
 # Run the MA crossover and buy-and-hold from the same fair start date.
 # Returns the strategy's daily returns, buy-and-hold's daily returns,
 # and the number of trades the strategy made.
-def compare_strategies(prices):
-    signal = ma_crossover_signal(prices)
-    strategy = run_backtest(prices, signal)
+def compare_strategies(prices, short=50, long=200, cost=0.001):
+    signal = ma_crossover_signal(prices, short, long)
+    strategy = run_backtest(prices, signal, cost)
 
-    start_date = get_fair_start(prices)
+    start_date = get_fair_start(prices, long)
     strategy = strategy[start_date:]  # its first return is 0 (no position yet)
     buy_hold = prices[start_date:].pct_change().fillna(0)  # first return set to 0
 
     # A trade happens each time the position changes (0 -> 1 or 1 -> 0)
-    position = signal.shift(1).fillna(0)[start_date:]
+    position = get_positions(prices, short, long)
     trades = int(position.diff().abs().sum())
     return strategy, buy_hold, trades
 

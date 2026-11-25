@@ -1,0 +1,7 @@
+# Dark theme using the colors from CLAUDE.md
+[theme]
+base = "dark"
+backgroundColor = "#262624"
+secondaryBackgroundColor = "#30302E"
+textColor = "#C2C0B6"
+primaryColor = "#A8C5DA"

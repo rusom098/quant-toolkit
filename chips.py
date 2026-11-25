@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from data import get_prices, get_returns, get_equity, get_annual_return, get_volatility, get_sharpe, get_max_drawdown
+from data import get_prices, get_returns, get_summary
 
 CHIP_TICKERS = ["NVDA", "AMD", "INTC", "AVGO", "QCOM", "MU",
                 "TSM", "ASML", "AMAT", "LRCX", "KLAC"]
@@ -9,40 +9,41 @@ END = "2025-01-01"
 
 
 # Download one ticker and work out its metrics. Returns None if no data.
-def get_stock_metrics(ticker):
-    prices = get_prices(ticker, START, END).dropna()
+def get_stock_metrics(ticker, start=START, end=END):
+    prices = get_prices(ticker, start, end).dropna()
     if prices.empty:  # download failed or rate-limited
         print(f"{ticker}: no data downloaded (possible yfinance rate limit)")
         return None
 
     returns = get_returns(prices)
-    equity = get_equity(returns)
-    metrics = {
-        "ticker": ticker,
-        "total": equity.iloc[-1] / equity.iloc[0] - 1,
-        "annual": get_annual_return(equity),
-        "volatility": get_volatility(returns),
-        "sharpe": get_sharpe(returns),
-        "max_dd": get_max_drawdown(equity),
-    }
+    metrics = get_summary(returns)  # total, annual, volatility, sharpe, max_dd
+    metrics["ticker"] = ticker
     return metrics
+
+
+# Sort stocks by Sharpe ratio, best first.
+def sort_by_sharpe(rows):
+    return sorted(rows, key=lambda row: row["sharpe"], reverse=True)
+
+
+# Did the stock beat the benchmark's annual return?
+def get_verdict(row, benchmark_row):
+    if row is benchmark_row:
+        return "(benchmark)"
+    if row["annual"] > benchmark_row["annual"]:
+        return "beat"
+    return "lagged"
 
 
 # Print a table of all stocks, sorted by Sharpe ratio (best first).
 def print_dashboard(rows, benchmark_row):
-    rows = sorted(rows, key=lambda row: row["sharpe"], reverse=True)
+    rows = sort_by_sharpe(rows)
     print(f"\nChip sector dashboard, {START} to {END} (sorted by Sharpe)")
     print(f"{'Ticker':<8}{'Total':>10}{'Annual':>9}{'Vol':>8}{'Sharpe':>8}{'Max DD':>9}  vs SMH")
     for row in rows + [benchmark_row]:
         if row is benchmark_row:
             print("-" * 62)
-        # Did the stock beat the benchmark's annual return?
-        if row is benchmark_row:
-            verdict = "(benchmark)"
-        elif row["annual"] > benchmark_row["annual"]:
-            verdict = "beat"
-        else:
-            verdict = "lagged"
+        verdict = get_verdict(row, benchmark_row)
         print(f"{row['ticker']:<8}{row['total']:>10.1%}{row['annual']:>9.1%}"
               f"{row['volatility']:>8.1%}{row['sharpe']:>8.2f}{row['max_dd']:>9.1%}  {verdict}")
 

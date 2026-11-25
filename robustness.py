@@ -18,8 +18,8 @@ def get_metrics(returns):
 
 
 # Backtest one ticker and return a row of results (or None if no data).
-def test_ticker(ticker):
-    prices = get_prices(ticker, START, END)
+def test_ticker(ticker, start=START, end=END):
+    prices = get_prices(ticker, start, end)
     if prices.dropna().empty:  # download failed or rate-limited
         print(f"{ticker}: no data downloaded (possible yfinance rate limit)")
         return None
@@ -50,23 +50,30 @@ def print_table(rows):
 
 
 # Count how often the strategy beat buy-and-hold on each metric.
-def print_summary(rows):
-    better_sharpe = 0
-    smaller_dd = 0
-    higher_return = 0
+def count_wins(rows):
+    wins = {"sharpe": 0, "max_dd": 0, "annual": 0}
     for row in rows:
         s = row["strategy"]
         b = row["buy_hold"]
         if s["sharpe"] > b["sharpe"]:
-            better_sharpe += 1
-        if s["max_dd"] > b["max_dd"]:  # drawdowns are negative, so bigger = smaller drop
-            smaller_dd += 1
+            wins["sharpe"] += 1
+        # Drawdowns are negative, so bigger = smaller drop. They are often exactly
+        # equal (both fully invested in the same crash), so a gap under 0.01%
+        # counts as a tie instead of a win caused by rounding noise.
+        if s["max_dd"] - b["max_dd"] > 0.0001:
+            wins["max_dd"] += 1
         if s["annual"] > b["annual"]:
-            higher_return += 1
+            wins["annual"] += 1
+    return wins
+
+
+# Print the win counts from count_wins.
+def print_summary(rows):
+    wins = count_wins(rows)
     total = len(rows)
-    print(f"\nStrategy had a higher Sharpe on {better_sharpe}/{total} tickers")
-    print(f"Strategy had a smaller max drawdown on {smaller_dd}/{total} tickers")
-    print(f"Strategy had a higher annual return on {higher_return}/{total} tickers")
+    print(f"\nStrategy had a higher Sharpe on {wins['sharpe']}/{total} tickers")
+    print(f"Strategy had a smaller max drawdown on {wins['max_dd']}/{total} tickers")
+    print(f"Strategy had a higher annual return on {wins['annual']}/{total} tickers")
 
 
 if __name__ == "__main__":

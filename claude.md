@@ -45,6 +45,17 @@ You write the code. I study it separately, so keep it easy to learn from.
   - `signal.shift(1)` prevents lookahead bias (trade the day after a signal)
   - 0.1% transaction cost per trade
   - interactive code sits under `if __name__ == "__main__":`
+- `implied_pdf.py`: options-implied (risk-neutral) price distribution via
+  Breeden-Litzenberger, shown in the app's "Implied Distribution" tab
+  - OTM options only (puts below spot, calls above), expirations 7-90 days,
+    IV 5%-300%, open interest >= 10, strikes 40%-200% of spot
+  - cubic smoothing spline of IV vs strike (`IV_NOISE = 0.03` sets smoothing),
+    Black-Scholes calls with `RISK_FREE_RATE = 0.04`, no dividends
+  - density = exp(rT) * d²C/dK²; negatives set to 0, renormalized to area 1
+  - sanity checks: raw area 0.9-1.1, negative area <= 5%, mean within 2% of
+    forward S*exp(rT), one peak; failing expirations are left out of the surface
+  - run alone: `python implied_pdf.py` (prints the checks)
+- `app.py`: Streamlit dashboard (`streamlit run app.py`), Plotly charts
 
 ## Conventions
 

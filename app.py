@@ -9,6 +9,8 @@ from data import get_prices, get_returns, get_equity, get_drawdown, get_summary
 from backtester import compare_strategies, get_positions
 from robustness import TICKERS, test_ticker, count_wins
 from chips import CHIP_TICKERS, BENCHMARK, get_stock_metrics, sort_by_sharpe, get_verdict
+from implied_pdf import (analyze_ticker, summary_table, SURFACE_X, RISK_FREE_RATE,
+                         MIN_DAYS, MAX_DAYS)
 
 # Colors from CLAUDE.md
 BG = "#262624"
@@ -313,6 +315,99 @@ def show_chips_tab(start, end):
     st.plotly_chart(plot_risk_return(rows, benchmark_row), width="stretch")
 
 
+# ---------- Tab 5: Implied Distribution ----------
+# The math lives in implied_pdf.py; this section only draws it.
+
+# Run the whole implied-distribution analysis for one ticker (cached for 1 hour,
+# because option prices change during the trading day).
+@st.cache_data(ttl="1h", show_spinner=False)
+def load_implied_distribution(ticker):
+    return analyze_ticker(ticker)
+
+
+# 3D surface: strike (% of spot) x days to expiration x density.
+def plot_density_surface(analysis):
+    fig = go.Figure(go.Surface(
+        x=SURFACE_X, y=analysis["surface_days"], z=analysis["surface_z"],
+        colorscale=[[0, BG], [0.5, BLUE], [1, PEACH]], showscale=False,
+        hovertemplate="Strike %{x:.0f}% of spot<br>%{y} days<br>Density %{z:.4f}<extra></extra>"))
+    axis = dict(backgroundcolor=BG, gridcolor=GRID, color=TEXT)
+    fig.update_layout(
+        title=f"{analysis['ticker']} risk-neutral density surface",
+        scene=dict(xaxis=dict(title="Strike (% of spot)", **axis),
+                   yaxis=dict(title="Days to expiration", **axis),
+                   zaxis=dict(title="Probability per 1% of spot", **axis)))
+    fig = style_chart(fig, height=650)
+    fig.update_layout(margin=dict(l=0, r=0, t=60, b=0))
+    return fig
+
+
+# 2D density for one expiration, with spot and the 5th/95th percentiles marked.
+def plot_single_density(result, spot):
+    fig = go.Figure(go.Scatter(x=result["strikes"], y=result["density"], name="Density",
+                               fill="tozeroy", line=dict(color=BLUE, width=2),
+                               hovertemplate="$%{x:.2f}: %{y:.4f}"))
+    fig.add_vline(x=spot, line=dict(color=PEACH, dash="dash"), annotation_text="Spot")
+    fig.add_vline(x=result["p5"], line=dict(color=SAGE, dash="dot"), annotation_text="5th pct")
+    fig.add_vline(x=result["p95"], line=dict(color=SAGE, dash="dot"), annotation_text="95th pct")
+    fig.update_layout(title=f"Risk-neutral density at expiration {result['expiration']} "
+                            f"({result['days']} days)")
+    fig.update_xaxes(title_text="Price at expiration ($)", tickprefix="$")
+    fig.update_yaxes(title_text="Probability per $1")
+    return style_chart(fig, height=450)
+
+
+def show_implied_tab():
+    st.subheader("Options-implied price distribution")
+    st.markdown(
+        "Option prices tell us how much traders pay to protect against, or bet on, each possible "
+        "price. The curvature of call prices across strikes (Breeden-Litzenberger) turns them into "
+        "a probability distribution for the price on each expiration date. This is a "
+        "**risk-neutral** distribution: it includes how much traders pay to avoid risk, so it is "
+        "**not a prediction** of where the stock will go.")
+    ticker = st.text_input("Options ticker", "NVDA", key="implied_ticker").strip().upper()
+
+    with st.spinner(f"Downloading {ticker} option chains..."):
+        analysis = load_implied_distribution(ticker)
+    results = analysis["results"]
+    if not results:
+        st.warning(f"No {ticker} expirations between {MIN_DAYS} and {MAX_DAYS} days away.")
+        return
+    st.caption(f"Spot ${analysis['spot']:.2f} (close of {analysis['spot_date']}). "
+               f"Risk-free rate assumed {RISK_FREE_RATE:.0%}, no dividends. If the market is "
+               "closed, the option data is from the last trading session.")
+
+    for r in results:  # sanity-check warnings
+        if r["warnings"]:
+            st.warning(f"{r['expiration']} excluded from the surface: {'; '.join(r['warnings'])}")
+
+    if len(analysis["surface_days"]) >= 2:  # a surface needs at least two expirations
+        st.plotly_chart(plot_density_surface(analysis), width="stretch")
+    else:
+        st.info("Fewer than 2 expirations passed the checks, so there is no surface to draw.")
+
+    with_density = [r for r in results if "density" in r]
+    if with_density:
+        labels = [f"{r['expiration']} ({r['days']} days)" for r in with_density]
+        chosen = st.selectbox("Expiration", labels)
+        result = with_density[labels.index(chosen)]
+        st.plotly_chart(plot_single_density(result, analysis["spot"]), width="stretch")
+
+    table = summary_table(analysis)
+    for column in ["P(above spot)", "Mean vs forward"]:
+        if column in table:
+            table[column] = table[column] * 100  # 0.5 -> 50 for display
+    dollars = st.column_config.NumberColumn(format="$%.2f")
+    st.dataframe(table, hide_index=True, width="stretch", column_config={
+        "5th pct": dollars, "95th pct": dollars,
+        "P(above spot)": st.column_config.NumberColumn(format="%.1f%%"),
+        "Mean vs forward": st.column_config.NumberColumn(format="%+.2f%%"),
+        "Raw area": st.column_config.NumberColumn(format="%.3f"),
+    })
+    st.caption("5th-95th pct: 90% of the risk-neutral probability lies in this price range. "
+               "Mean vs forward should be near 0% and raw area near 1 if the density is healthy.")
+
+
 # ---------- Page layout ----------
 
 # Sidebar inputs. Returns the ticker and the start/end dates as text.
@@ -345,8 +440,8 @@ def main():
     start = str(start)  # yfinance wants dates as text like "2015-01-01"
     end = str(end)
 
-    analyzer, backtester, robustness, chips = st.tabs(
-        ["Stock Analyzer", "Backtester", "Robustness", "Chip Sector"])
+    analyzer, backtester, robustness, chips, implied = st.tabs(
+        ["Stock Analyzer", "Backtester", "Robustness", "Chip Sector", "Implied Distribution"])
     with analyzer:
         run_safely(show_analyzer_tab, ticker, start, end)
     with backtester:
@@ -355,6 +450,8 @@ def main():
         run_safely(show_robustness_tab, start, end)
     with chips:
         run_safely(show_chips_tab, start, end)
+    with implied:
+        run_safely(show_implied_tab)
 
 
 main()

@@ -1,7 +1,7 @@
-# Dark theme using the colors from CLAUDE.md
+# Base theme = the Light theme. theme.py switches to Mid grey or Dark with CSS.
 [theme]
-base = "dark"
-backgroundColor = "#262624"
-secondaryBackgroundColor = "#30302E"
-textColor = "#C2C0B6"
-primaryColor = "#A8C5DA"
+base = "light"
+backgroundColor = "#E7E7E7"
+secondaryBackgroundColor = "#F4F4F4"
+textColor = "#111111"
+primaryColor = "#2563EB"
